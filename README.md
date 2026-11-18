@@ -8,7 +8,7 @@ that MicroVM, which is terminated when the task is done.
 
 The example has three parts:
 
-- **Sandbox image** (`Dockerfile`, `server.py`, `build_image.py`): a MicroVM image with a small command
+- **Lambda MicroVM image** (`Dockerfile`, `server.py`, `build_image.py`): an image with a small command
   server that runs bash scripts sent to it over HTTPS.
 - **Sandbox client** (`sandbox.py`): a Python `Sandbox` class that launches a MicroVM from the image,
   runs commands on it and terminates it.
