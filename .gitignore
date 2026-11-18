@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+.venv/
+venv/
+
+# Local environment and credentials
+.env
+.env.*
+
+# Logs
+*.log
+
+# macOS
+.DS_Store
