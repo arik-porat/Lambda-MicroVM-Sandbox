@@ -1,11 +1,21 @@
 # Lambda-MicroVM-Sandbox
 
-Run shell commands, and AI agents that run shell commands, in disposable AWS Lambda MicroVMs.
+Example code that shows how your AI agents can use AWS Lambda MicroVMs as a sandbox to run code.
 
-The project builds a MicroVM image with a small command server in it, then gives you a Python `Sandbox`
-class that launches a MicroVM from that image, runs bash scripts on it over HTTPS, and terminates it.
-`agent.py` uses the sandbox as the tool of a [Strands](https://strandsagents.com) agent, so a model can
-install packages, write code and run it on a throwaway Linux machine.
+The agent runs on your machine. When it needs to run a command, the command goes to a disposable
+MicroVM. The code the agent writes, the packages it installs and any mistakes it makes stay inside
+that MicroVM, which is terminated when the task is done.
+
+The example has three parts:
+
+- **Sandbox image** (`Dockerfile`, `server.py`, `build_image.py`): a MicroVM image with a small command
+  server that runs bash scripts sent to it over HTTPS.
+- **Sandbox client** (`sandbox.py`): a Python `Sandbox` class that launches a MicroVM from the image,
+  runs commands on it and terminates it.
+- **Agent** (`agent.py`): a [Strands](https://strandsagents.com) agent whose `run_command` tool runs
+  each command in a sandbox.
+
+The client works with any agent framework. Wrap `sandbox.run()` in a tool the same way `agent.py` does.
 
 ```python
 from sandbox import Sandbox
@@ -42,7 +52,7 @@ your code ── sandbox.py ──HTTPS (HTTP_INGRESS)──▶ Lambda proxy ─
 | `Dockerfile` | build | Base image `public.ecr.aws/lambda/microvms:al2023-minimal` plus python3 and `server.py`. |
 | `server.py` | MicroVM | Command server. Runs bash scripts as background jobs (port 8900) and answers Lambda lifecycle hooks (port 8901). Standard library only. |
 | `build_image.py` | your machine | Packages the build context, creates a least-privilege build role, and creates or updates the MicroVM image. |
-| `sandbox.py` | your machine | `Sandbox` client: create, run, kill. Running it directly does a hello-world round trip. |
+| `sandbox.py` | your machine | `Sandbox` client: create, run, kill. |
 | `agent.py` | your machine | Strands agent with a `run_command` tool that executes in a sandbox. |
 
 ## Requirements
@@ -65,12 +75,16 @@ pip install "boto3>=1.43.35" strands-agents
 ### 1. Build the image
 
 ```bash
-python3 build_image.py                         # uses the bucket lambdamv-images-<your account id>
-python3 build_image.py --bucket <your-bucket>  # or any other existing bucket
+python3 build_image.py                                          # uses the bucket lambdamv-images-<your account id>
+python3 build_image.py --bucket <your-bucket>                   # or any other existing bucket
+python3 build_image.py --name command-runner-8gb --memory 8192  # a second image with 8 GiB of memory
 ```
 
 The bucket must already exist. The script prints the build state every 15 seconds until the version is
 `SUCCESSFUL`. Run it again after you change `server.py` or `Dockerfile` to build a new image version.
+
+Memory is set on the image, not in `Sandbox.create()`. For a bigger sandbox, build a second image like
+the last command does and launch it by name with `Sandbox.create(image="command-runner-8gb")`.
 
 | Option | Default | Meaning |
 |---|---|---|
@@ -80,16 +94,7 @@ The bucket must already exist. The script prints the build state every 15 second
 | `--memory` | `4096` | Minimum memory in MiB. |
 | `--no-wait` | off | Submit the build and exit without polling. |
 
-### 2. Run a command
-
-```bash
-python3 sandbox.py
-```
-
-This launches a MicroVM, runs `echo "Hello from Sandbox!"`, prints the output and exit code, and
-terminates the MicroVM.
-
-### 3. Run an agent
+### 2. Run an agent
 
 ```bash
 python3 agent.py "Write a Python script that prints the first 20 primes and run it"
@@ -115,6 +120,8 @@ sandbox.run(command, timeout=60) -> Result   # Result(exit_code, output, timed_o
 sandbox.kill()                               # terminate; safe to call more than once
 ```
 
+- Memory (`--memory`) and CPU architecture (`ARM_64`) are set when the image is built. The `RunMicrovm`
+  API has no parameter for them, so pick a different image to change them.
 - Each `run()` starts a new `bash -c` process in `$HOME`. Files persist between calls; the working
   directory and environment variables do not.
 - Stdin is `/dev/null`, so use non-interactive flags such as `dnf install -y`.
